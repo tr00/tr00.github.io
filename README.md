@@ -1,2 +1,2 @@
-- [implementing a judy array](https://tr00.github.io/2022/12/05-implementing-a-judy-array.html)
+- [implementing a judy array](https://tr00.github.io/2022/12/05/implementing-a-judy-array.html)
 - [welcome to my blog](https://tr00.github.io/2022/12/05/welcome-to-my-blog.html)
