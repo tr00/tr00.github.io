@@ -62,7 +62,7 @@ So in order to implement a judy array, let's implement tries first.
 ```C
 typedef struct TRIE
 {
-    trie_t *children[256];
+    struct TRIE *children[256];
 } trie_t;
 ```
 
