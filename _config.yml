@@ -1,5 +1,6 @@
 title: tr00's dev blog
-remote_theme: pages-themes/midnight@v0.2.0
+theme: minima
+# remote_theme: pages-themes/midnight@v0.2.0
 description: My small blog about current hobby projects :)
-plugins:
-- jekyll-remote-theme
+# plugins:
+# - jekyll-remote-theme
