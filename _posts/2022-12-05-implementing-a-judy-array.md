@@ -50,3 +50,109 @@ This API isn't final and there is some functionality still missing (e.g. initial
 
 This implementation assumes x86-64 linux with 64B cache lines, 4096B pages, SSE compatibility and 48bit virtual address space.
 Or in other words, there is no portability which is a downside but... only if you care about portability.
+
+## Tries
+
+Tries also known as digital trees (and many more names) are basically 256-ary trees which encode a strings from root to leaf by decoding one char at each level.
+A key is inside the trie if there exists a leaf after decoding the entire string.
+There is a better explaination of [tries](https://en.wikipedia.org/wiki/Trie) on Wikipedia.
+The concept behind tries is quite rudimentary. Judy arrays are fundamentally tries with lots of optimization tricks.
+So in order to implement a judy array, let's implement tries first.
+
+```C
+typedef struct TRIE
+{
+    trie_t *children[256];
+} trie_t;
+```
+
+A node in a trie contains 256 pointers to either child nodes or null.
+At least in my implementation the terminating '\0' is also stored in the trie and the associated values are stored in the pointers after the '\0'.
+
+However every node being 2048 bytes large is a HUGE memory bottleneck.
+Especially if we have only a few keys inside a trie node, there will be
+a lot of unused but allocated space.
+
+### lookup
+
+```C
+void *lookup(trie_t *root, const uchar *key)
+{
+    trie_t *node = root;
+
+    while (node != NULL)
+    {
+        node = node->children[*key];
+
+        if (*key == '\0')
+            return (void *)node;
+
+        ++key;
+    }
+
+    return NULL;
+}
+```
+
+### insert
+
+When inserting a new key-value pair it consists of 3 steps:
+
+1. follow the nodes down until the key is no longer contained
+2. allocate new nodes as you descend further
+3. and when the end is reached save the value as leaf node
+
+```C
+void insert(trie_t *root, const uchar *key, void *val)
+{
+    trie_t **node = &root;
+
+    while (true)
+    {
+        if (*node == NULL)
+        {
+            *node = calloc(1, sizeof(trie_t));
+        }
+
+        node = &node->children[*key];
+
+        if (*key == '\0')
+            break;
+
+        ++key;
+    }
+
+    *node = val;
+}
+```
+
+### remove
+
+Removing a value is very much similar to looking it up but in the end 
+instead of returning the value it gets overwritten with NULL.
+If the key is not contained, meaning a NULL node is encoutered on the way down,
+we just happily return.
+
+```C
+void remove(trie_t *root, const uchar *key)
+{
+    trie_t **node = &root;
+
+    while (*node != NULL)
+    {
+        node = &node->children[*key];
+
+        if (*key == '\0')
+            *node = NULL;
+
+        ++key;
+    }
+}
+```
+
+## Conclusion
+
+Tries are very memory wasteful but they can be usefull as a baseline for future benchmarks.
+They are also helpful to understand how judy arrays are supposed to work if we ever get bogged down too deep in optimization wizardry.
+
+That's it for my first blog post. I hope you enjoyed this introduction to judy arrays & tries. In my [next]() blog post I'll introduce the first steps to avoid this big memory overconsumption.
