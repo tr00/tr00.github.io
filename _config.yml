@@ -1,5 +1,5 @@
 title: tr00's dev blog
-remote_theme: page-themes/slate@v0.2.0
+remote_theme: pages-themes/slate@v0.2.0
 description: My small blog about current hobby projects :)
 plugins:
   - jekyll-remote-theme
