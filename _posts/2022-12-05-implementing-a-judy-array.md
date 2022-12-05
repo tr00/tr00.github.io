@@ -1,4 +1,5 @@
 ---
+layout: post
 title: implementing a judy array
 date: 2022-12-05
 ---
