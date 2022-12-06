@@ -406,7 +406,7 @@ There are only two outcomes, either a single byte is set or none at all.
     //
     // | 00 | 00 | ff | 00 | 00 | 00 | 00 | -- |
     //
-    __m64 cmp = _mm_set1_pi8(cc);
+    __m64 cmp = _mm_cmpeq_pi8(key, vec);
 ```
 
 Previously I've ignored how we deal with potentially reading beyond the size,
