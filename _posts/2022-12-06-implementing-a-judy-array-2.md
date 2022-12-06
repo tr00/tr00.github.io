@@ -257,9 +257,8 @@ typedef struct JUDY_TINY_NODE
 Now this node fits into 1 cache line, can still be searched in parallel but
 the size got smaller by a single key. Well, the upsides heavily outweigh the downsides.
 
-### lookup
-
-We can now add a new node type to the state machine of the lookup function.
+We can now add a new node type to the state machine of the lookup function. 
+I will focus on lookup since it is the most relevant operation and the other two work very similar.
 
 ```C
 switch (typeof(node))
@@ -292,7 +291,7 @@ case TINY:
 ```
 This is the point where we put on our low level wizard hat and start optimizing this node type. So far we have already optimized the structure to fit in a single cache line and have allocator friendly alignment. Now we can tackle this little algorithm here.
 
-### Trick 1: loop unrolling
+## Trick 1: loop unrolling
 
 We know that the size is at most 7 which allows us to fully unroll this loop.
 I am currently completely ignoring the size which will come clear later.
@@ -323,7 +322,7 @@ I am currently completely ignoring the size which will come clear later.
 
 This may not look like superb software engineering but I would argue that this exactly is what software _engineering_ is supposed to be. Anyways, let's take a look at what we got: lots of branches.
 
-### Trick 2: branchless programming
+## Trick 2: branchless programming
 
 These branches exist because we currently assume that we have to compare the current char to the keys in order, but we know that a char is at most once inside the keys array.
 Thus only one of those branches is going to turn out as true and the order is unimportant.
@@ -368,7 +367,7 @@ Let's refactor again keeping that in mind:
 
 This looks much better. We have decreased the number of branches from 7 to 1 but we are still missing the last piece of the puzzle...
 
-### Trick 3: instruction level parallelism
+## Trick 3: instruction level parallelism
 
 Right now we are computing the same instruction with different data 7 times in suggession. 
 This is known as instruction level parallelism.
@@ -378,7 +377,7 @@ I will rely on some mmx instructions which limits portability but I'm sure there
 Okay but instead of just dropping the code here I will explain it step by step because it becomes increasingly tricky.
 
 When we encounter a tiny node (<=7 keys) we first fetch it's data with a single cache line fill.
-We move the 7 keys (56 bits) into a single 64bit xmm register. The last 8 bits of are the size but we will treat it as an 'dont-care' value and mask it out in the end.
+We move the 7 keys (56 bits) into a single 64bit xmm register. The last 8 bits of are the size but we will treat it as a 'dont-care' value and mask it out in the end.
 
 ```C
     judy_tiny_t *tiny = (judy_tiny_t *)decode(node);
@@ -409,22 +408,17 @@ There are only two outcomes, either a single byte is set or none at all.
     __m64 cmp = _mm_cmpeq_pi8(key, vec);
 ```
 
-Previously I've ignored how we deal with potentially reading beyond the size,
-but now we can simply mask off the keys which are not actually there.
+We can now convert our resulting vector back to an integer.
 
 ```C
-    // <          size          >
-    // | ff | ff | ff | ff | ff | 00 | 00 | 00 |
     //
-    uint64_t msk = (uint64_t)-1 << ((8 - tiny->size) << 3);
-
+    // 0x0000ff0000000000
     //
-    // | 00 | 00 | ff | 00 | 00 | 00 | 00 | 00 |
-    //
-    uint64_t res = _m_to_int64(cmp) & msk;
+    uint64_t res = _m_to_int64(cmp);
 ```
 
-And now we can compute the index by counting the zeros infront of the set byte.
+And now the index can be computed by counting the zeros infront of the set byte.
+This function is counting bits not bytes so we shift the result by 3 (divide by 8) to get the correct index.
 
 ```C
     int idx = __builtin_clzll(res) >> 3;
@@ -439,9 +433,7 @@ Let's put it all together:
     __m64 key = _mm_set1_pi8(cc);
     __m64 cmp = _mm_cmpeq_pi8(vec, key);
 
-    uint64_t msk = (uint64_t)-1 << ((8 - tiny->size) >> 3);
-
-    uint64_t res = _m_to_int64(cmp) & msk;
+    uint64_t res = _m_to_int64(cmp);
 
     if (!res)
         return NULL;
@@ -451,10 +443,66 @@ Let's put it all together:
     break;
 ```
 
-All of this effort may seem like a lot for comparing 7 bytes and returning either NULL or another node but these 10 over-engineered lines of code are in the hot path of our data structure.
-This code is likely to get executed on every lookup quite possibly multiple times so each branch we removed will pay off.
+These vector functions are inside the `<xmmintrin.h>` header on x86-64 machines and require to compile with `-march=native` or similar.
+I'm using [simde](https://github.com/simd-everywhere/simde) which allows this code to be compiled to other architectures as well.
 
-The last branch is necessary but inherently unpredictable or at least very data dependent. We can't do much about it, but let's take a step back and look what we have achieved.
+
+## Trick 4: bitmasks
+
+
+However we are not done yet. The size of a tiny node is being ignored right now and we always read the entire buffer.
+The code so far has only a single branch and we don't want introduce new branches to account for the size.
+
+A nice solution is to create a bitmask and mask off the indices which are above the size.
+
+```C
+    //   <--size-->
+    // 0xffffffffff000000
+    uint64_t msk = (uint64_t)-1 << ((8 - tiny->size) << 3);
+
+    uint64_t res = _m_to_int64(cmp) & msk;
+```
+
+This tricky one-line solution does the job. But can we do better?
+Maybe there exist some other bit hacks which do the same but quicker but I don't know about them.
+And I would hope the compiler can figure stuff like that out.
+
+Let's not hope let's check by plugging it into [godbolt](https://godbolt.org/z/1WET8j6r7).
+
+```s
+    shl     edi, 3
+    neg     dil
+    mov     rax, -1
+    shlx    rax, rax, rdi
+```
+
+Four instructions are not bad and they won't be the bottleneck of this data structure 
+but we can go faster by applying some reasoning here.
+
+We compute `8 - size` on every lookup but we can just store `8 - size` instead of the actual size.
+This complicates `insert` and `remove` a by a few instructions but lookup is the most important
+operation since all other operations perform a lookup first.
+This brings us down to just 3 instructions to create a bitmask from the size.
+
+But nothing is holding us back from storing `(8 - size) << 3` instead. 
+Another instruction saved.
+
+The pseudo-size is currently an integer value from `0b00001000` (full) to `0b01000000` (empty). 
+Thats only 4 relevant bits out of the 8 we gave it, so why don't we use the resources we got?
+
+Instead of constant-folding half the mask computation into our struct we can store the entire mask
+inside of those 8 bits and only store the size indirectly.
+
+When inserting we find the first 0 in the mask and insert our key there.
+When removing we just pop the associated bit.
+And lookup doesn't require any instructions to compute the mask. A win-win-win situation.
+
+## conclusion
+
+I can't see how we optimize this node type any further and I am quite happy with the [results](https://godbolt.org/z/bxT61sz74).
+
+All of this effort may seem like a lot for comparing 7 bytes and returning either NULL or another node but these 10 over-engineered lines of code are in the hot path of our data structure.
+This code is likely to get executed on every lookup quite possibly multiple times so each instruction we removed will pay off.
 
 Our goal was to create a new node which should drastically reduce memory waste for nodes with a tiny population.
 
