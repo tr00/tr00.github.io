@@ -377,7 +377,7 @@ I will rely on some mmx instructions which limits portability but I'm sure there
 Okay but instead of just dropping the code here I will explain it step by step because it becomes increasingly tricky.
 
 When we encounter a tiny node (<=7 keys) we first fetch it's data with a single cache line fill.
-We move the 7 keys (56 bits) into a single 64bit xmm register. The last 8 bits of are the size but we will treat it as a 'dont-care' value and mask it out in the end.
+We move the 7 keys (56 bits) into a single 64bit sse register. The last 8 bits of are the size but we will treat it as a 'dont-care' value and mask it out in the end.
 
 ```C
     judy_tiny_t *tiny = (judy_tiny_t *)decode(node);
@@ -388,7 +388,7 @@ We move the 7 keys (56 bits) into a single 64bit xmm register. The last 8 bits o
     __m64 vec = _m_from_int64(*(uint64_t *)&tiny->keys);
 ```
 
-We also fill another xmm register with 8 repetitions of the currently
+We also fill another sse register with 8 repetitions of the currently
 decoded char.
 
 ```C
@@ -491,11 +491,13 @@ The pseudo-size is currently an integer value from `0b00001000` (full) to `0b010
 Thats only 4 relevant bits out of the 8 we gave it, so why don't we use the resources we got?
 
 Instead of constant-folding half the mask computation into our struct we can store the entire mask
-inside of those 8 bits and only store the size indirectly.
+inside of those 8 bits and thus store the size only implicitly.
 
-When inserting we find the first 0 in the mask and insert our key there.
-When removing we just pop the associated bit.
-And lookup doesn't require any instructions to compute the mask. A win-win-win situation.
+- `insert`: we find the first 0 bit in the mask and insert our key there
+- `remove`: we just pop the associated bit
+- `lookup`: we don't require any instructions to compute the mask. 
+
+A win-win-win situation.
 
 ## conclusion
 
