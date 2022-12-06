@@ -1,2 +1,3 @@
+- [implementing a judy array 2](https://tr00.github.io/2022/12/06/implementing-a-judy-array-2.html)
 - [implementing a judy array](https://tr00.github.io/2022/12/05/implementing-a-judy-array.html)
 - [welcome to my blog](https://tr00.github.io/2022/12/05/welcome-to-my-blog.html)

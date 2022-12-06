@@ -155,4 +155,4 @@ void remove(trie_t *root, const uchar *key)
 Tries are very memory wasteful but they can be usefull as a baseline for future benchmarks.
 They are also helpful to understand how judy arrays are supposed to work if we ever get bogged down too deep in optimization wizardry.
 
-That's it for my first blog post. I hope you enjoyed this introduction to judy arrays & tries. In my [next]() blog post I'll introduce the first steps to avoid this big memory overconsumption.
+That's it for my first blog post. I hope you enjoyed this introduction to judy arrays & tries. In my [next](https://tr00.github.io/2022/12/05/implementing-a-judy-array-2.html) blog post I'll introduce the first steps to avoid this big memory overconsumption.
